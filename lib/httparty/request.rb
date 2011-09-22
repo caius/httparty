@@ -33,7 +33,7 @@ module HTTParty
         :default_params => {},
         :follow_redirects => true,
         :parser => Parser,
-        :persistent => false
+        :persistent => true
       }.merge(o)
     end
 
@@ -77,18 +77,18 @@ module HTTParty
     end
 
     def http_request r
-      if http.is_a?(Net::HTTP::Persistent)
-        http.request uri, r
-      else
+      if http.instance_of?(Net::HTTP)
         http.request r
+      else
+        http.request uri, r
       end
     end
 
     private
 
-    def attach_ssl_certificates(http)
-      # This sorts out it's own SSL
-      return if http.is_a? Net::HTTP::Persistent
+    def attach_ssl_certificates http
+      # Only need to do things for Net::HTTP
+      return unless http.instance_of? Net::HTTP
       if http.use_ssl?
         http.verify_mode = OpenSSL::SSL::VERIFY_NONE
 
@@ -130,12 +130,13 @@ module HTTParty
     end
 
     def http_instance
-      if options[:persistent] && defined?(Net::HTTP::Persistent)
+      # Default to persistent connections if net/http/persistent is loaded - unless otherwise told not to
+      if options[:persistent] != false && defined?(Net::HTTP::Persistent)
         Net::HTTP::Persistent.new(uri)
       else
-        Kernel.warn ":persistent set to true, but net/http/persistent not loaded. Falling back to non-persistent connections." if options[:persistent]
-        Net::HTTP.new(uri.host, uri.port, options[:http_proxyaddr], options[:http_proxyport])
-        http.use_ssl = ssl_implied?
+        Net::HTTP.new(uri.host, uri.port, options[:http_proxyaddr], options[:http_proxyport]).tap do |h|
+          h.use_ssl = ssl_implied?
+        end
       end
     end
 
