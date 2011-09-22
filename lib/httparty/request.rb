@@ -23,7 +23,7 @@ module HTTParty
       end.flatten.sort.join('&')
     end
 
-    attr_accessor :http_method, :path, :options, :last_response, :redirect, :last_uri
+    attr_accessor :http_method, :path, :options, :last_response, :redirect, :last_uri, :persistent
 
     def initialize(http_method, path, o={})
       self.http_method = http_method
@@ -32,7 +32,8 @@ module HTTParty
         :limit => o.delete(:no_follow) ? 1 : 5,
         :default_params => {},
         :follow_redirects => true,
-        :parser => Parser
+        :parser => Parser,
+        :persistent => false
       }.merge(o)
     end
 
@@ -70,14 +71,24 @@ module HTTParty
     def perform
       validate
       setup_raw_request
-      self.last_response = http.request(@raw_request)
+      self.last_response = http_request(@raw_request)
       handle_deflation
       handle_response
+    end
+
+    def http_request r
+      if http.is_a?(Net::HTTP::Persistent)
+        http.request uri, r
+      else
+        http.request r
+      end
     end
 
     private
 
     def attach_ssl_certificates(http)
+      # This sorts out it's own SSL
+      return if http.is_a? Net::HTTP::Persistent
       if http.use_ssl?
         http.verify_mode = OpenSSL::SSL::VERIFY_NONE
 
@@ -102,8 +113,7 @@ module HTTParty
     end
 
     def http
-      http = Net::HTTP.new(uri.host, uri.port, options[:http_proxyaddr], options[:http_proxyport])
-      http.use_ssl = ssl_implied?
+      http = http_instance
 
       if options[:timeout] && (options[:timeout].is_a?(Integer) || options[:timeout].is_a?(Float))
         http.open_timeout = options[:timeout]
@@ -117,6 +127,16 @@ module HTTParty
       end
 
       http
+    end
+
+    def http_instance
+      if options[:persistent] && defined?(Net::HTTP::Persistent)
+        Net::HTTP::Persistent.new(uri)
+      else
+        Kernel.warn ":persistent set to true, but net/http/persistent not loaded. Falling back to non-persistent connections." if options[:persistent]
+        Net::HTTP.new(uri.host, uri.port, options[:http_proxyaddr], options[:http_proxyport])
+        http.use_ssl = ssl_implied?
+      end
     end
 
     def ssl_implied?
