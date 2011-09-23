@@ -87,9 +87,10 @@ module HTTParty
     private
 
     def attach_ssl_certificates http
-      # Only need to do things for Net::HTTP
-      return unless http.instance_of? Net::HTTP
-      if http.use_ssl?
+      if http.instance_of?(Net::HTTP)
+        # Check if we actually need to do anything
+        return unless http.use_ssl?
+
         http.verify_mode = OpenSSL::SSL::VERIFY_NONE
 
         # Client certificate authentication
@@ -107,6 +108,25 @@ module HTTParty
 
         if options[:ssl_ca_path]
           http.ca_path = options[:ssl_ca_path]
+          http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+        end
+      else # Net::HTTP::Persistent
+        http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
+        # Client certificate authentication
+        if options[:pem]
+          http.certificate = OpenSSL::X509::Certificate.new(options[:pem])
+          http.private_key = OpenSSL::PKey::RSA.new(options[:pem], options[:pem_password])
+          http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+        end
+
+        # SSL certificate authority file and/or directory
+        if options[:ssl_ca_file]
+          http.ca_file = options[:ssl_ca_file]
+        end
+
+        if options[:ssl_ca_path]
+          http.cert_store = options[:ssl_ca_path]
           http.verify_mode = OpenSSL::SSL::VERIFY_PEER
         end
       end
