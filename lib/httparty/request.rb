@@ -77,17 +77,36 @@ module HTTParty
     end
 
     def http_request r
-      if http.instance_of?(Net::HTTP)
-        http.request r
-      else
+      if defined?(Net::HTTP::Persistent) && http.instance_of?(Net::HTTP::Persistent)
         http.request uri, r
+      else
+        http.request r
       end
     end
 
     private
 
     def attach_ssl_certificates http
-      if http.instance_of?(Net::HTTP)
+      if defined?(Net::HTTP::Persistent) && http.instance_of?(Net::HTTP::Persistent)
+        http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
+        # Client certificate authentication
+        if options[:pem]
+          http.certificate = OpenSSL::X509::Certificate.new(options[:pem])
+          http.private_key = OpenSSL::PKey::RSA.new(options[:pem], options[:pem_password])
+          http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+        end
+
+        # SSL certificate authority file and/or directory
+        if options[:ssl_ca_file]
+          http.ca_file = options[:ssl_ca_file]
+        end
+
+        if options[:ssl_ca_path]
+          http.cert_store = options[:ssl_ca_path]
+          http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+        end
+      else # Net::HTTP (or proxy instance)
         # Check if we actually need to do anything
         return unless http.use_ssl?
 
@@ -108,25 +127,6 @@ module HTTParty
 
         if options[:ssl_ca_path]
           http.ca_path = options[:ssl_ca_path]
-          http.verify_mode = OpenSSL::SSL::VERIFY_PEER
-        end
-      else # Net::HTTP::Persistent
-        http.verify_mode = OpenSSL::SSL::VERIFY_NONE
-
-        # Client certificate authentication
-        if options[:pem]
-          http.certificate = OpenSSL::X509::Certificate.new(options[:pem])
-          http.private_key = OpenSSL::PKey::RSA.new(options[:pem], options[:pem_password])
-          http.verify_mode = OpenSSL::SSL::VERIFY_PEER
-        end
-
-        # SSL certificate authority file and/or directory
-        if options[:ssl_ca_file]
-          http.ca_file = options[:ssl_ca_file]
-        end
-
-        if options[:ssl_ca_path]
-          http.cert_store = options[:ssl_ca_path]
           http.verify_mode = OpenSSL::SSL::VERIFY_PEER
         end
       end
